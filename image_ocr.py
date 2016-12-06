@@ -57,6 +57,8 @@ from keras.utils.data_utils import get_file
 from keras.preprocessing import image
 import keras.callbacks
 
+from sentence_reader import SentenceReader
+
 OUTPUT_DIR = "image_ocr"
 
 np.random.seed(55)
@@ -146,6 +148,10 @@ def text_to_labels(text, num_classes):
             ret.append(ord(char) - ord('a'))
         elif char == ' ':
             ret.append(26)
+        elif char >= 'A' and char <= 'Z':
+            ret.append(27 + ord(char) - ord('A'))
+        else:
+            print("Unrecognized char: {} in text: {}".format(char, text))
     return ret
 
 
@@ -162,7 +168,6 @@ def is_valid_str(in_str):
 # each time with random perturbations
 
 class TextImageGenerator(keras.callbacks.Callback):
-
     def __init__(self, monogram_file, bigram_file, minibatch_size,
                  img_w, img_h, downsample_width, val_split,
                  absolute_max_string_len=16):
@@ -193,33 +198,24 @@ class TextImageGenerator(keras.callbacks.Callback):
         self.X_text = []
         self.Y_len = [0] * self.num_words
 
-        # monogram file is sorted by frequency in english speech
-        with open(self.monogram_file, 'rt') as f:
-            for line in f:
-                if len(self.string_list) == int(self.num_words * mono_fraction):
-                    break
-                word = line.rstrip()
-                if max_string_len == -1 or max_string_len is None or len(word) <= max_string_len:
-                    self.string_list.append(word)
+        sentenceReader = SentenceReader()
+        self.sentences=[]
+        for sentence in sentenceReader.sentence_generator():
+            if len(self.sentences) >= num_words:
+                break
+            if sentence.get_num_words() == 1 and \
+               len(sentence.get_text()) in range(2, max_string_len) and \
+               sentence.get_image_height() + 16 <= self.img_h and sentence.get_image_width() + 10 <= self.img_w:
+                self.sentences.append(sentence)
 
-        # bigram file contains common word pairings in english speech
-        with open(self.bigram_file, 'rt') as f:
-            lines = f.readlines()
-            for line in lines:
-                if len(self.string_list) == self.num_words:
-                    break
-                columns = line.lower().split()
-                word = columns[0] + ' ' + columns[1]
-                if is_valid_str(word) and \
-                        (max_string_len == -1 or max_string_len is None or len(word) <= max_string_len):
-                    self.string_list.append(word)
-        if len(self.string_list) != self.num_words:
-            raise IOError('Could not pull enough words from supplied monogram and bigram files. ')
+        self.string_list = [sentence.get_text().rstrip() for sentence in self.sentences]
 
-        for i, word in enumerate(self.string_list):
-            self.Y_len[i] = len(word)
-            self.Y_data[i, 0:len(word)] = text_to_labels(word, self.get_output_size())
-            self.X_text.append(word)
+        for i, sentence_text in enumerate(self.string_list):
+            self.Y_len[i] = len(sentence_text)
+            labels =  np.asarray(text_to_labels(sentence_text, self.get_output_size()))
+            self.Y_data[i, 0:len(labels)] = labels
+            # self.Y_data[i] = np.pad(text_to_labels(sentence_text, self.get_output_size()), (0, self.absolute_max_string_len - len(sentence_text)), 'constant', constant_values=-1).transpose()
+            self.X_text.append(sentence_text)
         self.Y_len = np.expand_dims(np.array(self.Y_len), 1)
 
         self.cur_val_index = self.val_split
@@ -240,24 +236,25 @@ class TextImageGenerator(keras.callbacks.Callback):
         for i in range(0, size):
             # Mix in some blank inputs.  This seems to be important for
             # achieving translational invariance
-            # if train and i > size - 4:
-            #     if K.image_dim_ordering() == 'th':
-            #         X_data[i, 0, :, :] = paint_text('', self.img_w, self.img_h)
-            #     else:
-            #         X_data[i, :, :, 0] = paint_text('', self.img_w, self.img_h)
-            #     labels[i, 0] = self.blank_label
-            #     input_length[i] = self.downsample_width
-            #     label_length[i] = 1
-            #     source_str.append('')
-            # else:
+            if train and i > size - 4:
                 if K.image_dim_ordering() == 'th':
-                    X_data[i, 0, :, :] = paint_text(self.X_text[index + i], self.img_w, self.img_h)
+                    X_data[i, 0, :, :] = paint_text('', self.img_w, self.img_h)
                 else:
-                    X_data[i, :, :, 0] = paint_text(self.X_text[index + i], self.img_w, self.img_h)
-                labels[i, :] = self.Y_data[index + i]
+                    X_data[i, :, :, 0] = paint_text('', self.img_w, self.img_h)
+                labels[i, 0] = self.blank_label
                 input_length[i] = self.downsample_width
-                label_length[i] = self.Y_len[index + i]
-                source_str.append(self.X_text[index + i])
+                label_length[i] = 1
+                source_str.append('')
+            else:
+                image_data = self.sentences[index + i].get_image_data(self.img_h, self.img_w)
+                if K.image_dim_ordering() == 'th':
+                    X_data[i, 0, :, :] = image_data
+                else:
+                    X_data[i, :, :, 0] = image_data
+            labels[i, :] = self.Y_data[index + i]
+            input_length[i] = self.downsample_width
+            label_length[i] = self.Y_len[index + i]
+            source_str.append(self.X_text[index + i])
 
         inputs = {'the_input': X_data,
                   'the_labels': labels,
@@ -334,7 +331,6 @@ def decode_batch(test_func, word_batch):
 
 
 class VizCallback(keras.callbacks.Callback):
-
     def __init__(self, test_func, text_img_gen, num_display_words=6):
         self.test_func = test_func
         self.output_dir = os.path.join(
@@ -380,8 +376,9 @@ class VizCallback(keras.callbacks.Callback):
         pylab.savefig(os.path.join(self.output_dir, 'e%02d.png' % epoch))
         pylab.close()
 
+
 # Input Parameters
-img_h = 64
+img_h = 120
 img_w = 512
 nb_epoch = 50
 minibatch_size = 32

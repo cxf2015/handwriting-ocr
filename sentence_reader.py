@@ -1,10 +1,12 @@
 import glob
 import os
+import re
 import xml.etree.ElementTree as ET
 from random import shuffle
 
 import cairocffi as cairo
 import numpy as np
+from keras.preprocessing import image
 from scipy import ndimage
 from scipy.misc import imread, imsave
 
@@ -16,7 +18,7 @@ class Sentence(object):
         self.file_prefix = file_prefix
 
     def get_text(self):
-        return self.text
+        return re.sub(r'[^a-zA-Z ]', '', self.text)
 
     def create_image_surface(self):
         return cairo.ImageSurface.create_from_png(self.get_filename())
@@ -43,8 +45,9 @@ class Sentence(object):
         a = np.expand_dims(a, 0)
         a = speckle(a)
 
-        imsave("/tmp/output.png", a[0])
-        return a[0]
+        a = image.random_rotation(a, 3 * (width - left_pad) / width + 1)
+
+        return a
 
     def get_image_height(self):
         return self.create_image_surface().get_height()
@@ -69,7 +72,7 @@ class Word(Sentence):
 class SentenceReader(object):
     def __init__(self):
         self.sentences = []
-        files = glob.glob("data/xml/a01*.xml")
+        files = glob.glob("data/xml/*.xml")
         for file in files:
             tree = ET.parse(file)
             root = tree.getroot()
@@ -96,12 +99,3 @@ def speckle(img):
     img_speck[img_speck > 1] = 1
     img_speck[img_speck <= 0] = 0
     return img_speck
-
-
-sentenceReader = SentenceReader()
-
-for sentence in sentenceReader.sentence_generator():
-    if sentence.get_num_words() == 1 and len(sentence.get_text()) in range(2, 4) and \
-                    sentence.get_image_height() <= 100 and sentence.get_image_width() <= 280:
-        sentence.get_image_data(120, 300)
-        print("reached")
