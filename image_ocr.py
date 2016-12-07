@@ -188,7 +188,7 @@ class TextImageGenerator(keras.callbacks.Callback):
 
     # num_words can be independent of the epoch size due to the use of generators
     # as max_string_len grows, num_words can grow
-    def build_word_list(self, num_words, max_string_len=None, mono_fraction=0.5):
+    def build_word_list(self, num_words, max_string_len=None, max_words=1):
         assert max_string_len <= self.absolute_max_string_len
         assert num_words % self.minibatch_size == 0
         assert (self.val_split * num_words) % self.minibatch_size == 0
@@ -205,8 +205,8 @@ class TextImageGenerator(keras.callbacks.Callback):
             if len(self.sentences) >= num_words:
                 break
             if sentence.get_num_words() == 1 and \
-               len(sentence.get_text()) in range(2, max_string_len) and \
-               sentence.get_image_height() + 16 <= self.img_h and sentence.get_image_width() + 10 <= self.img_w:
+                    len(sentence.get_text()) in range(1, max_string_len) and sentence.get_num_words() <= max_words and \
+                    sentence.get_image_height() + 16 <= self.img_h and sentence.get_image_width() + 10 <= self.img_w:
                 self.sentences.append(sentence)
 
         self.string_list = [sentence.get_text().rstrip() for sentence in self.sentences]
@@ -252,10 +252,10 @@ class TextImageGenerator(keras.callbacks.Callback):
                     X_data[i, 0, :, :] = image_data
                 else:
                     X_data[i, :, :, 0] = image_data
-            labels[i, :] = self.Y_data[index + i]
-            input_length[i] = self.downsample_width
-            label_length[i] = self.Y_len[index + i]
-            source_str.append(self.X_text[index + i])
+                labels[i, :] = self.Y_data[index + i]
+                input_length[i] = self.downsample_width
+                label_length[i] = self.Y_len[index + i]
+                source_str.append(self.X_text[index + i])
 
         inputs = {'the_input': X_data,
                   'the_labels': labels,
@@ -295,9 +295,9 @@ class TextImageGenerator(keras.callbacks.Callback):
         if epoch == 10:
             self.build_word_list(32000, 8, 1)
         if epoch == 20:
-            self.build_word_list(32000, 8, 0.6)
+            self.build_word_list(32000, 8, 2)
         if epoch == 30:
-            self.build_word_list(64000, 12, 0.5)
+            self.build_word_list(64000, 12, 5)
 
 
 # the actual loss calc occurs here despite it not being
@@ -327,8 +327,10 @@ def decode_batch(test_func, word_batch):
                 outstr += chr(c + ord('a'))
             elif c == 26:
                 outstr += ' '
-            elif c >= 27 <= 27 + 26:
+            elif c >= 27 < 53:
                 outstr += chr(c - 27 + ord('A'))
+            elif c == 53:
+                outstr += '_'
             else:
                 raise Exception("Invalid label {}".format(c))
         ret.append(outstr)

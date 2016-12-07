@@ -8,7 +8,7 @@ import cairocffi as cairo
 import numpy as np
 from keras.preprocessing import image
 from scipy import ndimage
-from scipy.misc import imread, imsave
+from scipy.misc import imread
 
 
 class Sentence(object):
