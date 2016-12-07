@@ -141,7 +141,7 @@ def shuffle_mats_or_lists(matrix_list, stop_ind=None):
     return ret
 
 
-def text_to_labels(text, num_classes):
+def text_to_labels(text):
     ret = []
     for char in text:
         if char >= 'a' and char <= 'z':
@@ -151,7 +151,7 @@ def text_to_labels(text, num_classes):
         elif char >= 'A' and char <= 'Z':
             ret.append(27 + ord(char) - ord('A'))
         else:
-            print("Unrecognized char: {} in text: {}".format(char, text))
+            raise Exception("Unrecognized char: {} in text: {}".format(char, text))
     return ret
 
 
@@ -183,7 +183,7 @@ class TextImageGenerator(keras.callbacks.Callback):
         self.absolute_max_string_len = absolute_max_string_len
 
     def get_output_size(self):
-        return 28
+        return 28 + 26
 
     # num_words can be independent of the epoch size due to the use of generators
     # as max_string_len grows, num_words can grow
@@ -212,7 +212,7 @@ class TextImageGenerator(keras.callbacks.Callback):
 
         for i, sentence_text in enumerate(self.string_list):
             self.Y_len[i] = len(sentence_text)
-            labels =  np.asarray(text_to_labels(sentence_text, self.get_output_size()))
+            labels =  np.asarray(text_to_labels(sentence_text))
             self.Y_data[i, 0:len(labels)] = labels
             # self.Y_data[i] = np.pad(text_to_labels(sentence_text, self.get_output_size()), (0, self.absolute_max_string_len - len(sentence_text)), 'constant', constant_values=-1).transpose()
             self.X_text.append(sentence_text)
@@ -256,6 +256,7 @@ class TextImageGenerator(keras.callbacks.Callback):
             label_length[i] = self.Y_len[index + i]
             source_str.append(self.X_text[index + i])
 
+        print(X_data.shape, labels.shape)
         inputs = {'the_input': X_data,
                   'the_labels': labels,
                   'input_length': input_length,
@@ -322,10 +323,14 @@ def decode_batch(test_func, word_batch):
         # 26 is space, 27 is CTC blank char
         outstr = ''
         for c in out_best:
-            if c >= 0 and c < 26:
+            if 0 <= c < 26:
                 outstr += chr(c + ord('a'))
             elif c == 26:
                 outstr += ' '
+            elif ord('A') <= c <= ord('Z'):
+                outstr += chr(c + ord('A'))
+            else:
+                raise Exception("Invalid label {}".format(c))
         ret.append(outstr)
     return ret
 
