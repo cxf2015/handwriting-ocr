@@ -43,6 +43,7 @@ import datetime
 import cairocffi as cairo
 import editdistance
 import numpy as np
+import h5py
 from scipy import ndimage
 import pylab
 from keras import backend as K
@@ -256,7 +257,6 @@ class TextImageGenerator(keras.callbacks.Callback):
             label_length[i] = self.Y_len[index + i]
             source_str.append(self.X_text[index + i])
 
-        print(X_data.shape, labels.shape)
         inputs = {'the_input': X_data,
                   'the_labels': labels,
                   'input_length': input_length,
@@ -327,8 +327,8 @@ def decode_batch(test_func, word_batch):
                 outstr += chr(c + ord('a'))
             elif c == 26:
                 outstr += ' '
-            elif ord('A') <= c <= ord('Z'):
-                outstr += chr(c + ord('A'))
+            elif c >= 27 <= 27 + 26:
+                outstr += chr(c - 27 + ord('A'))
             else:
                 raise Exception("Invalid label {}".format(c))
         ret.append(outstr)
@@ -377,7 +377,7 @@ class VizCallback(keras.callbacks.Callback):
             pylab.imshow(the_input, cmap='Greys_r')
             pylab.xlabel('Truth = \'%s\' Decoded = \'%s\'' % (word_batch['source_str'][i], res[i]))
         fig = pylab.gcf()
-        fig.set_size_inches(10, 12)
+        fig.set_size_inches(10, 20)
         pylab.savefig(os.path.join(self.output_dir, 'e%02d.png' % epoch))
         pylab.close()
 

@@ -33,10 +33,18 @@ class Sentence(object):
 
         max_shift_x = width - image_width - border_width
         max_shift_y = height - image_height - border_height
-        left_pad = np.random.randint(0, int(max_shift_x))
-        right_pad = width - (left_pad + image_width)
-        top_pad = np.random.randint(0, int(max_shift_y))
+
+        if max_shift_y > 0:
+            top_pad = np.random.randint(0, int(max_shift_y))
+        else:
+            top_pad = 0
         bottom_pad = height - (top_pad + image_height)
+
+        if max_shift_x > 0:
+            left_pad = np.random.randint(0, int(max_shift_x))
+        else:
+            left_pad = 0
+        right_pad = width - (left_pad + image_width)
 
         a = np.pad(a, ((top_pad, bottom_pad), (left_pad, right_pad)), 'constant', constant_values=255)
 
