@@ -40,10 +40,13 @@ import os
 import itertools
 import re
 import datetime
+from random import shuffle
+
 import cairocffi as cairo
 import editdistance
 import numpy as np
 import h5py
+from collections import defaultdict
 from scipy import ndimage
 import pylab
 from keras import backend as K
@@ -60,7 +63,7 @@ import keras.callbacks
 
 from sentence_reader import SentenceReader
 
-OUTPUT_DIR = "image_ocr"
+OUTPUT_DIR = "model"
 
 np.random.seed(55)
 
@@ -128,9 +131,9 @@ def shuffle_mats_or_lists(matrix_list, stop_ind=None):
         stop_ind = len_val
     assert stop_ind <= len_val
 
-    a = range(stop_ind)
+    a = np.asarray(range(stop_ind))
     np.random.shuffle(a)
-    a += range(stop_ind, len_val)
+    a = np.hstack((a, np.asarray(range(stop_ind, len_val))))
     for mat in matrix_list:
         if isinstance(mat, np.ndarray):
             ret.append(mat[a])
@@ -147,13 +150,13 @@ def text_to_labels(text):
     for char in text:
         if char >= 'a' and char <= 'z':
             ret.append(ord(char) - ord('a'))
-        elif char == ' ':
-            ret.append(26)
         elif char >= 'A' and char <= 'Z':
-            ret.append(27 + ord(char) - ord('A'))
+            ret.append(26 + ord(char) - ord('A'))
+        elif char == ' ':
+            ret.append(52)
         else:
             raise Exception("Unrecognized char: {} in text: {}".format(char, text))
-    return ret
+    return np.asarray(ret)
 
 
 # only a-z and space..probably not to difficult
@@ -201,14 +204,26 @@ class TextImageGenerator(keras.callbacks.Callback):
         self.Y_len = [0] * self.num_words
 
         self.sentenceReader.shuffle()
-        self.sentences=[]
+        groupedSentences = defaultdict(list)
+        totalSentences = 0
         for sentence in self.sentenceReader.sentence_generator():
-            if len(self.sentences) >= num_words:
-                break
             if sentence.get_num_words() == 1 and \
                     len(sentence.get_text()) in range(1, max_string_len) and sentence.get_num_words() <= max_words and \
                     sentence.get_image_height() + 16 <= self.img_h and sentence.get_image_width() + 10 <= self.img_w:
-                self.sentences.append(sentence)
+                groupedSentences[sentence.get_text()].append(sentence)
+                totalSentences += 1
+
+        self.sentences = []
+        while totalSentences > 0 and len(self.sentences) < num_words:
+            for groupedSentence_text in groupedSentences:
+                if len(groupedSentences[groupedSentence_text]) > 0:
+                    self.sentences.append(groupedSentences[groupedSentence_text].pop(0))
+                    totalSentences -= 1
+                    if len(self.sentences) == num_words:
+                        break
+
+        assert len(self.sentences) == num_words
+        shuffle(self.sentences)
 
         self.string_list = [sentence.get_text().rstrip() for sentence in self.sentences]
 
@@ -262,7 +277,7 @@ class TextImageGenerator(keras.callbacks.Callback):
                   'the_labels': labels,
                   'input_length': input_length,
                   'label_length': label_length,
-                  'source_str': source_str  # used for visualization only
+                  'source_str': np.asarray(source_str)  # used for visualization only
                   }
         outputs = {'ctc': np.zeros([size])}  # dummy data for dummy loss function
         return (inputs, outputs)
@@ -321,15 +336,15 @@ def decode_batch(test_func, word_batch):
     for j in range(out.shape[0]):
         out_best = list(np.argmax(out[j, 2:], 1))
         out_best = [k for k, g in itertools.groupby(out_best)]
-        # 26 is space, 27 is CTC blank char
+        # 52 is space, 53 is CTC blank char
         outstr = ''
         for c in out_best:
             if 0 <= c < 26:
                 outstr += chr(c + ord('a'))
-            elif c == 26:
+            elif 26 <= c < 52:
+                outstr += chr(c - 26 + ord('A'))
+            elif c == 52:
                 outstr += ' '
-            elif c >= 27 < 53:
-                outstr += chr(c - 27 + ord('A'))
             elif c == 53:
                 outstr += '_'
             else:
@@ -342,7 +357,7 @@ class VizCallback(keras.callbacks.Callback):
     def __init__(self, test_func, text_img_gen, num_display_words=6):
         self.test_func = test_func
         self.output_dir = os.path.join(
-            OUTPUT_DIR, datetime.datetime.now().strftime('%A, %d. %B %Y %I.%M%p'))
+            OUTPUT_DIR, datetime.datetime.now().strftime('%Y-%m-%dT%H-%m-%S'))
         self.text_img_gen = text_img_gen
         self.num_display_words = num_display_words
         os.makedirs(self.output_dir)
@@ -380,13 +395,13 @@ class VizCallback(keras.callbacks.Callback):
             pylab.imshow(the_input, cmap='Greys_r')
             pylab.xlabel('Truth = \'%s\' Decoded = \'%s\'' % (word_batch['source_str'][i], res[i]))
         fig = pylab.gcf()
-        fig.set_size_inches(10, 20)
+        fig.set_size_inches(10, 25)
         pylab.savefig(os.path.join(self.output_dir, 'e%02d.png' % epoch))
         pylab.close()
 
 
 # Input Parameters
-img_h = 120
+img_h = 160
 img_w = 512
 nb_epoch = 50
 minibatch_size = 32
