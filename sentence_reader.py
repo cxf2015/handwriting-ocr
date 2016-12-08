@@ -4,7 +4,6 @@ import re
 import xml.etree.ElementTree as ET
 from random import shuffle
 
-import cairocffi as cairo
 import numpy as np
 from keras.preprocessing import image
 from scipy import ndimage
@@ -20,11 +19,11 @@ class Sentence(object):
     def get_text(self):
         return re.sub(r'[^a-zA-Z ]', '', self.text)
 
-    def create_image_surface(self):
-        return cairo.ImageSurface.create_from_png(self.get_filename())
+    def get_raw_image_data(self):
+        return imread(self.get_filename(), True, 'L')
 
     def get_image_data(self, height, width):
-        a = imread(self.get_filename(), True, 'L')
+        a = self.get_raw_image_data()
         image_height, image_width = a.shape
         border_width, border_height = (10, 16)
         if image_width + border_width > width or image_height + border_height > height:
@@ -58,10 +57,10 @@ class Sentence(object):
         return a
 
     def get_image_height(self):
-        return self.create_image_surface().get_height()
+        return self.get_raw_image_data().shape[0]
 
     def get_image_width(self):
-        return self.create_image_surface().get_width()
+        return self.get_raw_image_data().shape[1]
 
     def get_filename(self):
         split = self.id.split("-")
@@ -89,11 +88,13 @@ class SentenceReader(object):
                 word = Word(wordElement.attrib['text'], wordElement.attrib['id'])
                 if (os.path.getsize(word.get_filename()) > 0):
                     self.sentences.append(word)
-        shuffle(self.sentences)
 
     def sentence_generator(self):
         for sentence in self.sentences:
             yield sentence
+
+    def shuffle(self):
+        shuffle(self.sentences)
 
 
 # this creates larger "blotches" of noise which look

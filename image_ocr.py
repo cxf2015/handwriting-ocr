@@ -182,6 +182,7 @@ class TextImageGenerator(keras.callbacks.Callback):
         self.val_split = val_split
         self.blank_label = self.get_output_size() - 1
         self.absolute_max_string_len = absolute_max_string_len
+        self.sentenceReader = SentenceReader()
 
     def get_output_size(self):
         return 28 + 26
@@ -199,9 +200,9 @@ class TextImageGenerator(keras.callbacks.Callback):
         self.X_text = []
         self.Y_len = [0] * self.num_words
 
-        sentenceReader = SentenceReader()
+        self.sentenceReader.shuffle()
         self.sentences=[]
-        for sentence in sentenceReader.sentence_generator():
+        for sentence in self.sentenceReader.sentence_generator():
             if len(self.sentences) >= num_words:
                 break
             if sentence.get_num_words() == 1 and \
